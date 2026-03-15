@@ -622,6 +622,7 @@ window.addEventListener('error', function(e) {
           <button class="btn" style="background:#1a4a7a;padding:13px;font-size:0.88rem;" onclick="registrarPagoPlazo('abono')">💰 Abonar</button>
           <button class="btn btn-green" style="padding:13px;font-size:0.88rem;" onclick="registrarPagoPlazo('liquidar')">✅ Liquidar pago</button>
         </div>
+        <button class="btn" style="background:#7b2d8b;padding:13px;font-size:0.88rem;width:100%;" onclick="liquidacionAnticipadaPlazo()">🏁 Liquidación anticipada total</button>
       </div>
     </div>
 
@@ -1768,16 +1769,20 @@ function mostrarPlazo(c) {
   const pagosRestantes = c.totalPagos - c.pagosRealizados;
   const hayVencidas = semanas.some(s => s.tipo === 'vencida');
   const hayHoy = semanas.some(s => s.tipo === 'hoy');
+  const estaLiquidado = c.liquidado || (c.pagosRealizados >= c.totalPagos && !c.fechaPago && (!c.semanasVencidas || c.semanasVencidas.length === 0));
 
   $('rChips').innerHTML = `
     <div class="chip"><div class="cl">Monto total</div><div class="cv">${fm(c.monto)}</div></div>
     <div class="chip"><div class="cl">Pago semanal</div><div class="cv">${fm(c.pagoSemanal)}</div></div>
     <div class="chip"><div class="cl">Pagos</div><div class="cv">${c.pagosRealizados} de ${c.totalPagos}</div></div>
-    <div class="chip"><div class="cl">Restantes</div><div class="cv">${pagosRestantes} pagos</div></div>
+    <div class="chip"><div class="cl">Restantes</div><div class="cv">${estaLiquidado ? '✅ Liquidado' : pagosRestantes + ' pagos'}</div></div>
   `;
 
   const tagEl = $('rVencidoTag');
-  if (hayVencidas) {
+  if (estaLiquidado) {
+    tagEl.innerHTML = `<div class="vencido-tag ok">✅ Préstamo liquidado${c.fechaLiquidacion ? ' — ' + c.fechaLiquidacion : ''}</div>`;
+    tagEl.style.display = 'block';
+  } else if (hayVencidas) {
     const maxDias = Math.max(...semanas.filter(s=>s.tipo==='vencida').map(s=>s.diasV));
     tagEl.innerHTML = `<div class="vencido-tag">🔴 ${maxDias} día${maxDias!==1?'s':''} vencido${maxDias!==1?'s':''}</div>`;
     tagEl.style.display = 'block';
@@ -1787,14 +1792,20 @@ function mostrarPlazo(c) {
   } else { tagEl.style.display = 'none'; }
 
   const band = $('rTotalBand');
-  band.className = 'total-band ' + (hayVencidas ? 'over' : hayHoy ? 'warn' : 'ok');
-  $('rTotalLabel').textContent = 'TOTAL A PAGAR';
-  $('rTotal').textContent = fm(totalGeneral);
+  if (estaLiquidado) {
+    band.className = 'total-band ok';
+    $('rTotalLabel').textContent = '✅ LIQUIDADO';
+    $('rTotal').textContent = fm(0);
+  } else {
+    band.className = 'total-band ' + (hayVencidas ? 'over' : hayHoy ? 'warn' : 'ok');
+    $('rTotalLabel').textContent = 'TOTAL A PAGAR';
+    $('rTotal').textContent = fm(totalGeneral);
+  }
 
   $('rSemanasWrap').style.display = 'none';
   $('rAcciones').style.display = 'block';
   $('accionesPrestamo').style.display = 'none';
-  $('accionesPlazo').style.display = 'grid';
+  $('accionesPlazo').style.display = estaLiquidado ? 'none' : 'grid';
   $('rLimite').textContent = `Pagos: ${c.pagosRealizados} de ${c.totalPagos}`;
 
   if (c.historial && c.historial.length > 0) {
@@ -1974,6 +1985,97 @@ Próximo pago: ${fdShort(c.fechaPago)}`);
   const arr = load();
   const idx = arr.findIndex(x => x.id === c.id && x.tipo === c.tipo);
   if (idx !== -1) { arr[idx] = c; save(arr); }
+  mostrarResultado(c);
+}
+
+function liquidacionAnticipadaPlazo() {
+  const c = window._clienteActual;
+  if (!c || c.tipo !== 'plazo') return;
+
+  const moratorioBase = c.pagoSemanal * 0.05;
+  if (!c.semanasVencidas) c.semanasVencidas = [];
+  if (!c.abonosSemanaActual) c.abonosSemanaActual = [];
+  if (!c.historial) c.historial = [];
+
+  // 1. Calcular semanas vencidas (ya archivadas)
+  let totalVencidas = 0;
+  let detalleVencidas = '';
+  c.semanasVencidas.forEach(sv => {
+    const dc = diasConCargo(sv.fechaPago);
+    const moratorio = moratorioBase * dc;
+    const total = sv.pendiente + moratorio;
+    totalVencidas += total;
+    detalleVencidas += `\n  • Semana ${fdShort(sv.fechaPago)}: ${fm(sv.pendiente)}${moratorio > 0 ? ` + ${fm(moratorio)} moratorio` : ''} = ${fm(total)}`;
+  });
+
+  // 2. Calcular semana en curso
+  let totalSemanaActual = 0;
+  let detalleSemanaActual = '';
+  if (c.fechaPago) {
+    const dc = diasConCargo(c.fechaPago);
+    const moratorio = moratorioBase * dc;
+    const totalAbonado = c.abonosSemanaActual.reduce((s, a) => s + a.monto, 0);
+    const pendiente = c.pagoSemanal - totalAbonado;
+    const pendienteReal = pendiente > 0 ? pendiente : 0;
+    totalSemanaActual = pendienteReal + moratorio;
+    detalleSemanaActual = `\n  • Semana actual (${fdShort(c.fechaPago)}): ${fm(pendienteReal)}${moratorio > 0 ? ` + ${fm(moratorio)} moratorio` : ''} = ${fm(totalSemanaActual)}`;
+  }
+
+  // 3. Calcular semanas futuras restantes
+  // pagosRealizados ya incluye la semana en curso si se pagó; los restantes son los que faltan después de la semana actual
+  const semanasVencidasCount = c.semanasVencidas.length;
+  // Semanas futuras = totalPagos - pagosRealizados - semanasVencidas - (1 semana en curso si existe)
+  const semanaEnCursoCount = c.fechaPago ? 1 : 0;
+  const semanasFuturas = c.totalPagos - c.pagosRealizados - semanasVencidasCount - semanaEnCursoCount;
+  const totalFuturas = semanasFuturas > 0 ? semanasFuturas * c.pagoSemanal : 0;
+  let detalleFuturas = '';
+  if (semanasFuturas > 0) {
+    detalleFuturas = `\n  • ${semanasFuturas} semana${semanasFuturas !== 1 ? 's' : ''} restante${semanasFuturas !== 1 ? 's' : ''}: ${semanasFuturas} × ${fm(c.pagoSemanal)} = ${fm(totalFuturas)}`;
+  }
+
+  // 4. Total a liquidar
+  const totalLiquidar = totalVencidas + totalSemanaActual + totalFuturas;
+
+  if (totalLiquidar <= 0) {
+    alert('✅ Este préstamo ya está liquidado.');
+    return;
+  }
+
+  // 5. Mostrar resumen y confirmar
+  const resumen =
+    `🏁 LIQUIDACIÓN ANTICIPADA TOTAL\n` +
+    `Cliente: ${c.nombre}\n` +
+    `────────────────────────────\n` +
+    (detalleVencidas ? `Semanas vencidas:${detalleVencidas}\n` : '') +
+    (detalleSemanaActual ? `Semana en curso:${detalleSemanaActual}\n` : '') +
+    (detalleFuturas ? `Semanas futuras:${detalleFuturas}\n` : '') +
+    `────────────────────────────\n` +
+    `TOTAL A PAGAR: ${fm(totalLiquidar)}\n\n` +
+    `¿Confirmar liquidación anticipada?`;
+
+  if (!confirm(resumen)) return;
+
+  // 6. Aplicar liquidación
+  const fecha = new Date().toLocaleDateString('es-MX');
+  c.historial.push({
+    fecha,
+    tipo: `Liquidación anticipada total`,
+    monto: totalLiquidar
+  });
+
+  // Marcar todo como pagado
+  c.pagosRealizados = c.totalPagos;
+  c.semanasVencidas = [];
+  c.abonosSemanaActual = [];
+  c.fechaPago = null;
+  c.liquidado = true;
+  c.fechaLiquidacion = fecha;
+
+  const arr = load();
+  const idx = arr.findIndex(x => x.id === c.id && x.tipo === c.tipo);
+  if (idx !== -1) { arr[idx] = c; save(arr); }
+
+  alert(`✅ ¡Préstamo liquidado!\nTotal pagado: ${fm(totalLiquidar)}\nFecha: ${fecha}`);
   mostrarResultado(c);
 }
 
