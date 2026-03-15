@@ -2904,15 +2904,34 @@ function renderRecordatorios() {
       </div>
       <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
         ${tel
-          ? `<a href="${waLink}" target="_blank" style="flex:1;min-width:100px;background:#25d366;color:#fff;border:none;border-radius:9px;padding:10px;font-size:0.82rem;font-weight:700;text-align:center;text-decoration:none;font-family:'Outfit',sans-serif;">📲 WhatsApp</a>
-             <a href="sms:${tel}?body=${encodeURIComponent(msg)}" style="flex:1;min-width:100px;background:#1a6fb5;color:#fff;border:none;border-radius:9px;padding:10px;font-size:0.82rem;font-weight:700;text-align:center;text-decoration:none;font-family:'Outfit',sans-serif;">💬 SMS</a>
-             <a href="tel:${tel}" style="flex:1;min-width:80px;background:#e65100;color:#fff;border:none;border-radius:9px;padding:10px;font-size:0.82rem;font-weight:700;text-align:center;text-decoration:none;font-family:'Outfit',sans-serif;">📞 Llamar</a>`
+          ? dias === 1
+            ? `<a href="sms:${tel}?body=${encodeURIComponent('Credi Aliado: Recordatorio, su pago vence mañana.')}" style="flex:1;min-width:100px;background:#1a6fb5;color:#fff;border:none;border-radius:9px;padding:10px;font-size:0.82rem;font-weight:700;text-align:center;text-decoration:none;font-family:'Outfit',sans-serif;">💬 SMS recordatorio</a>`
+            : `<a href="${waLink}" target="_blank" style="flex:1;min-width:100px;background:#25d366;color:#fff;border:none;border-radius:9px;padding:10px;font-size:0.82rem;font-weight:700;text-align:center;text-decoration:none;font-family:'Outfit',sans-serif;">📲 WhatsApp</a>
+               <a href="sms:${tel}?body=${encodeURIComponent(msg)}" style="flex:1;min-width:100px;background:#1a6fb5;color:#fff;border:none;border-radius:9px;padding:10px;font-size:0.82rem;font-weight:700;text-align:center;text-decoration:none;font-family:'Outfit',sans-serif;">💬 SMS</a>
+               <a href="tel:${tel}" style="flex:1;min-width:80px;background:#e65100;color:#fff;border:none;border-radius:9px;padding:10px;font-size:0.82rem;font-weight:700;text-align:center;text-decoration:none;font-family:'Outfit',sans-serif;">📞 Llamar</a>`
           : `<div style="flex:1;background:var(--surface2);border-radius:9px;padding:10px;font-size:0.78rem;color:var(--ink2);text-align:center;">Sin teléfono</div>`
         }
         <button onclick="verDesdeLista('${c.tipo}',${c.id})" style="background:var(--ink);color:#fff;border:none;border-radius:9px;padding:10px 14px;font-size:0.82rem;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">Ver</button>
       </div>
+      ${dias < 0 || dias === 0 ? `
+      <div style="margin-top:8px;">
+        <button onclick="toggleLlamadaAuto('${c.tipo}',${c.id},this)" style="width:100%;padding:10px;border:none;border-radius:9px;font-size:0.82rem;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;background:${c.llamadaAutoOff ? '#aaa' : '#7b2d8b'};color:#fff;">
+          ${c.llamadaAutoOff ? '🔕 Llamada auto: OFF' : '🤖 Llamada auto: ON'}
+        </button>
+      </div>` : ''}
     </div>`;
   }).join('');
+}
+
+function toggleLlamadaAuto(tipo, id, btn) {
+  const arr = load();
+  const idx = arr.findIndex(x => x.id === id && x.tipo === tipo);
+  if (idx === -1) return;
+  arr[idx].llamadaAutoOff = !arr[idx].llamadaAutoOff;
+  save(arr);
+  const off = arr[idx].llamadaAutoOff;
+  btn.style.background = off ? '#aaa' : '#7b2d8b';
+  btn.textContent = off ? '🔕 Llamada auto: OFF' : '🤖 Llamada auto: ON';
 }
 
 updateBadge();
