@@ -1806,6 +1806,8 @@ function mostrarPlazo(c) {
   $('rAcciones').style.display = 'block';
   $('accionesPrestamo').style.display = 'none';
   $('accionesPlazo').style.display = estaLiquidado ? 'none' : 'grid';
+  const acMercPlazo = document.getElementById('accionesMercancia');
+  if (acMercPlazo) acMercPlazo.style.display = 'none';
   $('rLimite').textContent = `Pagos: ${c.pagosRealizados} de ${c.totalPagos}`;
 
   if (c.historial && c.historial.length > 0) {
@@ -1929,6 +1931,14 @@ function registrarPagoPlazo(tipo) {
       const dc = diasConCargo(sv.fechaPago);
       const moratorio = moratorioBase * dc;
       const total = sv.pendiente + moratorio;
+      const confirmar = confirm(
+        `✅ Liquidar pago — Semana ${fdShort(sv.fechaPago)}\n\n` +
+        `Pendiente: ${fm(sv.pendiente)}\n` +
+        `Moratorio: ${fm(moratorio)}\n` +
+        `Total a liquidar: ${fm(total)}\n\n` +
+        `¿Confirmar liquidación de este pago?`
+      );
+      if (!confirmar) return;
       c.historial.push({ fecha: new Date().toLocaleDateString('es-MX'), tipo: `Liquidación semana ${fdShort(sv.fechaPago)}`, monto: total });
       c.semanasVencidas.shift();
       c.pagosRealizados += 1;
@@ -1941,6 +1951,15 @@ Pagos: ${c.pagosRealizados} de ${c.totalPagos}`);
       const totalAbonado = c.abonosSemanaActual.reduce((s,a) => s + a.monto, 0);
       const pendiente = c.pagoSemanal - totalAbonado;
       const total = (pendiente > 0 ? pendiente : 0) + moratorio;
+      const confirmar = confirm(
+        `✅ Liquidar pago — Semana ${fdShort(c.fechaPago)}\n\n` +
+        (totalAbonado > 0 ? `Ya abonado: ${fm(totalAbonado)}\n` : '') +
+        `Pendiente: ${fm(pendiente > 0 ? pendiente : 0)}\n` +
+        `Moratorio: ${fm(moratorio)}\n` +
+        `Total a liquidar: ${fm(total)}\n\n` +
+        `¿Confirmar liquidación de este pago?`
+      );
+      if (!confirmar) return;
       c.historial.push({ fecha: new Date().toLocaleDateString('es-MX'), tipo: `Liquidación semana ${fdShort(c.fechaPago)}`, monto: total });
       c.pagosRealizados += 1;
       c.abonosSemanaActual = [];
@@ -2903,17 +2922,21 @@ function renderRecordatorios() {
         </div>
       </div>
       <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
-        ${tel
-          ? dias === 1
-            ? `<a href="sms:${tel}?body=${encodeURIComponent('Credi Aliado: Recordatorio, su pago vence mañana.')}" style="flex:1;min-width:100px;background:#1a6fb5;color:#fff;border:none;border-radius:9px;padding:10px;font-size:0.82rem;font-weight:700;text-align:center;text-decoration:none;font-family:'Outfit',sans-serif;">💬 SMS recordatorio</a>`
-            : `<a href="${waLink}" target="_blank" style="flex:1;min-width:100px;background:#25d366;color:#fff;border:none;border-radius:9px;padding:10px;font-size:0.82rem;font-weight:700;text-align:center;text-decoration:none;font-family:'Outfit',sans-serif;">📲 WhatsApp</a>
-               <a href="sms:${tel}?body=${encodeURIComponent(msg)}" style="flex:1;min-width:100px;background:#1a6fb5;color:#fff;border:none;border-radius:9px;padding:10px;font-size:0.82rem;font-weight:700;text-align:center;text-decoration:none;font-family:'Outfit',sans-serif;">💬 SMS</a>
-               <a href="tel:${tel}" style="flex:1;min-width:80px;background:#e65100;color:#fff;border:none;border-radius:9px;padding:10px;font-size:0.82rem;font-weight:700;text-align:center;text-decoration:none;font-family:'Outfit',sans-serif;">📞 Llamar</a>`
-          : `<div style="flex:1;background:var(--surface2);border-radius:9px;padding:10px;font-size:0.78rem;color:var(--ink2);text-align:center;">Sin teléfono</div>`
+        ${dias === 2
+          ? ''
+          : dias === 1
+            ? tel
+              ? `<a href="sms:${tel}?body=${encodeURIComponent('Credi Aliado: Recordatorio, su pago vence mañana.')}" style="flex:1;min-width:100px;background:#1a6fb5;color:#fff;border:none;border-radius:9px;padding:10px;font-size:0.82rem;font-weight:700;text-align:center;text-decoration:none;font-family:'Outfit',sans-serif;">💬 SMS recordatorio</a>`
+              : `<div style="flex:1;background:var(--surface2);border-radius:9px;padding:10px;font-size:0.78rem;color:var(--ink2);text-align:center;">Sin teléfono</div>`
+            : tel
+              ? `<a href="${waLink}" target="_blank" style="flex:1;min-width:100px;background:#25d366;color:#fff;border:none;border-radius:9px;padding:10px;font-size:0.82rem;font-weight:700;text-align:center;text-decoration:none;font-family:'Outfit',sans-serif;">📲 WhatsApp</a>
+                 <a href="sms:${tel}?body=${encodeURIComponent(msg)}" style="flex:1;min-width:100px;background:#1a6fb5;color:#fff;border:none;border-radius:9px;padding:10px;font-size:0.82rem;font-weight:700;text-align:center;text-decoration:none;font-family:'Outfit',sans-serif;">💬 SMS</a>
+                 <a href="tel:${tel}" style="flex:1;min-width:80px;background:#e65100;color:#fff;border:none;border-radius:9px;padding:10px;font-size:0.82rem;font-weight:700;text-align:center;text-decoration:none;font-family:'Outfit',sans-serif;">📞 Llamar</a>`
+              : `<div style="flex:1;background:var(--surface2);border-radius:9px;padding:10px;font-size:0.78rem;color:var(--ink2);text-align:center;">Sin teléfono</div>`
         }
         <button onclick="verDesdeLista('${c.tipo}',${c.id})" style="background:var(--ink);color:#fff;border:none;border-radius:9px;padding:10px 14px;font-size:0.82rem;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">Ver</button>
       </div>
-      ${dias < 0 || dias === 0 ? `
+      ${dias < 0 ? `
       <div style="margin-top:8px;">
         <button onclick="toggleLlamadaAuto('${c.tipo}',${c.id},this)" style="width:100%;padding:10px;border:none;border-radius:9px;font-size:0.82rem;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;background:${c.llamadaAutoOff ? '#aaa' : '#7b2d8b'};color:#fff;">
           ${c.llamadaAutoOff ? '🔕 Llamada auto: OFF' : '🤖 Llamada auto: ON'}
@@ -2932,6 +2955,39 @@ function toggleLlamadaAuto(tipo, id, btn) {
   const off = arr[idx].llamadaAutoOff;
   btn.style.background = off ? '#aaa' : '#7b2d8b';
   btn.textContent = off ? '🔕 Llamada auto: OFF' : '🤖 Llamada auto: ON';
+
+  // ── Si se activa ON → disparar llamada inmediata ──
+  if (!off) {
+    const cliente = arr[idx];
+    const tel = cliente.tel ? cliente.tel.replace(/\D/g,'') : '';
+    if (!tel) {
+      mostrarBannerSync('⚠️ Este cliente no tiene teléfono registrado', false);
+      return;
+    }
+    btn.textContent = '⏳ Llamando...';
+    btn.disabled = true;
+    fetch('https://credi-aliado-server.onrender.com/llamada-prueba', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ telefono: tel, dias: 1 })
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        mostrarBannerSync('✅ Llamada iniciada a ' + tel, true);
+        btn.textContent = '🤖 Llamada auto: ON';
+      } else {
+        mostrarBannerSync('❌ Error al llamar: ' + (data.error || 'desconocido'), false);
+        btn.textContent = '🤖 Llamada auto: ON';
+      }
+      btn.disabled = false;
+    })
+    .catch(err => {
+      mostrarBannerSync('❌ No se pudo conectar al servidor', false);
+      btn.textContent = '🤖 Llamada auto: ON';
+      btn.disabled = false;
+    });
+  }
 }
 
 updateBadge();
