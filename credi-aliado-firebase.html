@@ -550,6 +550,10 @@ window.addEventListener('error', function(e) {
                 <option value="5">5% — Cliente puntual</option>
               </select>
             </div>
+            <div class="fgroup" id="editFechaPagoWrap">
+              <label>📅 Fecha de pago</label>
+              <input type="date" id="editFechaPago">
+            </div>
           </div>
 
           <div style="display:flex;gap:10px;">
@@ -2239,6 +2243,11 @@ function abrirEditor() {
 
   // Ocultar selector de comisión para mercancía (siempre 5%)
   $('editInteresPct').parentElement.style.display = (c.tipo === 'mercancia' || c.tipo === 'plazo') ? 'none' : '';
+  // Cargar fecha de pago si existe
+  if (c.fechaPago) $('editFechaPago').value = c.fechaPago;
+  else $('editFechaPago').value = '';
+  // Mostrar campo solo para prestamo y plazo
+  $('editFechaPagoWrap').style.display = (c.tipo === 'mercancia') ? 'none' : '';
 
   $('editSuccessMsg').style.display = 'none';
   $('editorModal').style.display = 'block';
@@ -2266,6 +2275,9 @@ function guardarEdicion() {
   c.ref2 = $('editRef2').value.trim();
   c.limite = parseFloat($('editLimite').value) || 0;
   if (c.tipo === 'prestamo') c.interesPct = parseInt($('editInteresPct').value);
+  // Guardar fecha de pago si se modificó
+  const nuevaFecha = $('editFechaPago').value;
+  if (nuevaFecha && c.tipo !== 'mercancia') c.fechaPago = nuevaFecha;
 
   const arr = load();
   const idx = arr.findIndex(x => x.id === c.id && x.tipo === c.tipo);
