@@ -2513,7 +2513,7 @@ Nueva fecha de pago: 1 semana`)) return;
 
   // Actualizar cliente
   c.monto = nuevoSaldo;
-  c.fechaPago = addWeeks(new Date().toISOString().split('T')[0], 1);
+  c.fechaPago = addWeeks(c.fechaPago, 1);
   c.liquidado = false;
 
   const arr = load();
