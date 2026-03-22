@@ -2942,12 +2942,16 @@ function renderRecordatorios() {
     const tel = c.tel ? c.tel.replace(/\D/g,'') : '';
     const waLink = tel ? `https://wa.me/52${tel}?text=${encodeURIComponent(msg)}` : '';
     const fecha = getProximaFecha(c);
-    const dias = diasParaFecha(fecha);
+    // Para plazo con semanas vencidas archivadas, forzar dias negativo para mostrar botón WhatsApp
+    const tieneSemanasVencidas = c.tipo === 'plazo' && c.semanasVencidas && c.semanasVencidas.length > 0;
+    const diasRaw = diasParaFecha(fecha);
+    const dias = tieneSemanasVencidas && (diasRaw === null || diasRaw >= 0) ? -1 : diasRaw;
     const tipoIcon = c.tipo === 'prestamo' ? '💵' : c.tipo === 'plazo' ? '📋' : '📦';
 
     let diasLabel = '';
     let diasColor = 'var(--green)';
-    if (dias < 0) { diasLabel = `${Math.abs(dias)}d vencido`; diasColor = 'var(--red)'; }
+    if (tieneSemanasVencidas) { diasLabel = `${c.semanasVencidas.length + (diasRaw !== null && diasRaw < 0 ? 1 : 0)}sem vencida${c.semanasVencidas.length>0?'s':''}`; diasColor = 'var(--red)'; }
+    else if (dias < 0) { diasLabel = `${Math.abs(dias)}d vencido`; diasColor = 'var(--red)'; }
     else if (dias === 0) { diasLabel = 'Hoy'; diasColor = 'var(--amber)'; }
     else if (dias === 1) { diasLabel = 'Mañana'; diasColor = 'var(--amber)'; }
     else { diasLabel = `En ${dias}d`; diasColor = 'var(--green)'; }
