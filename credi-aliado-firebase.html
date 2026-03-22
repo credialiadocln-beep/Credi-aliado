@@ -2840,6 +2840,8 @@ function generarMsgRecordatorio(c) {
     }
 
   } else if (c.tipo === 'plazo') {
+    // Verificar si hay una semana que ya debió archivarse (>=7 días vencida)
+    c = verificarNuevaSemana(c);
     const semanas = generarSemanasPlazo(c);
     const hayVencidas = semanas.some(s => s.tipo === 'vencida');
     const totalGeneral = semanas.reduce((s, w) => s + w.total, 0);
