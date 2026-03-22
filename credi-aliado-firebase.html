@@ -2902,6 +2902,12 @@ ${ocultarEstado ? '' : '\n' + estadoMsg}`.trimEnd();
 
 function renderRecordatorios() {
   const arr = load();
+  // Actualizar semanas vencidas de todos los clientes plazo antes de filtrar
+  arr.forEach((c, i) => {
+    if (c.tipo === 'plazo') arr[i] = verificarNuevaSemana(c);
+  });
+
+
   const list = document.getElementById('recordList');
 
   const filtrados = arr.filter(c => {
@@ -2940,6 +2946,8 @@ function renderRecordatorios() {
   }
 
   list.innerHTML = filtrados.map(c => {
+    // Actualizar semanas vencidas antes de generar mensaje
+    if (c.tipo === 'plazo') c = verificarNuevaSemana(c);
     const msg = generarMsgRecordatorio(c);
     const tel = c.tel ? c.tel.replace(/\D/g,'') : '';
     const waLink = tel ? `https://wa.me/52${tel}?text=${encodeURIComponent(msg)}` : '';
