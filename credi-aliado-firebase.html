@@ -2840,22 +2840,37 @@ function generarMsgRecordatorio(c) {
     }
 
   } else if (c.tipo === 'plazo') {
-    // Verificar si hay una semana que ya debió archivarse (>=7 días vencida)
-    c = verificarNuevaSemana(c);
-    const semanas = generarSemanasPlazo(c);
-    const hayVencidas = semanas.some(s => s.tipo === 'vencida');
-    const totalGeneral = semanas.reduce((s, w) => s + w.total, 0);
-    if (hayVencidas) {
-      // Desglose semana por semana (hay al menos una vencida)
+    const moratorioBase = c.pagoSemanal * 0.05;
+    // Construir lista de semanas: primero las archivadas, luego la actual
+    const todasSemanas = [];
+    // Semanas archivadas en semanasVencidas
+    if (c.semanasVencidas && c.semanasVencidas.length > 0) {
+      c.semanasVencidas.forEach(sv => {
+        const dc = diasConCargo(sv.fechaPago);
+        const moratorio = moratorioBase * dc;
+        todasSemanas.push({ fechaPago: sv.fechaPago, pagoOriginal: sv.pagoOriginal || c.pagoSemanal, pendiente: sv.pendiente, moratorio, diasV: dc, abonos: sv.abonos || [], tipo: 'vencida' });
+      });
+    }
+    // Semana actual (c.fechaPago) — puede estar vencida o no
+    if (c.fechaPago) {
+      const dc = diasConCargo(c.fechaPago);
+      const moratorio = moratorioBase * dc;
+      const totalAbonado = (c.abonosSemanaActual || []).reduce((s,a) => s+a.monto, 0);
+      const pendiente = Math.max(0, c.pagoSemanal - totalAbonado);
+      const diasActual = diasVencido(c.fechaPago);
+      const tipo = dc > 0 ? 'vencida' : (diasActual === 0 ? 'hoy' : 'pendiente');
+      todasSemanas.push({ fechaPago: c.fechaPago, pagoOriginal: c.pagoSemanal, pendiente, moratorio, diasV: dc, abonos: c.abonosSemanaActual || [], tipo });
+    }
+    const hayVencidas = todasSemanas.some(s => s.tipo === 'vencida');
+    const totalGeneral = todasSemanas.reduce((s, w) => s + w.pendiente + w.moratorio, 0);
+    if (hayVencidas && todasSemanas.length > 1) {
       let lineas = '';
-      semanas.forEach((s, idx) => {
+      todasSemanas.forEach((s, idx) => {
         if (idx > 0) lineas += '\n';
         lineas += `📌 Semana ${idx + 1} — vence ${fdShort(s.fechaPago)}\n`;
         lineas += `Pago semanal: *${fm(s.pagoOriginal)}*`;
         if (s.moratorio > 0) lineas += `\nInterés moratorio (${s.diasV} día${s.diasV!==1?'s':''}): *${fm(s.moratorio)}*`;
-        if (s.abonos && s.abonos.length > 0) {
-          s.abonos.forEach(a => { lineas += `\nAbono (${a.fecha}): *-${fm(a.monto)}*`; });
-        }
+        if (s.abonos.length > 0) s.abonos.forEach(a => { lineas += `\nAbono (${a.fecha}): *-${fm(a.monto)}*`; });
         lineas += `\nTotal semana: *${fm(s.pendiente + s.moratorio)}*`;
         if (s.tipo === 'vencida') lineas += `\n🔴 ${s.diasV} día${s.diasV!==1?'s':''} vencido${s.diasV!==1?'s':''}`;
         else if (s.tipo === 'hoy') lineas += `\n📅 Vence hoy`;
@@ -2864,17 +2879,15 @@ function generarMsgRecordatorio(c) {
       lineas += `\nPagos: ${c.pagosRealizados} de ${c.totalPagos}`;
       montoLineas = lineas;
     } else {
-      // Sin semanas vencidas, mostrar normal
       const dc = diasConCargo(c.fechaPago);
       const moratorio = dc > 0 ? c.pagoSemanal * 0.05 * dc : 0;
-      const totalAbonado = (c.abonosSemanaActual || []).reduce((a,b) => a+b.monto, 0);
+      const totalAbonado = (c.abonosSemanaActual || []).reduce((s,a) => s+a.monto, 0);
       const pendiente = (c.pagoSemanal - totalAbonado) + moratorio;
       montoLineas = `Pago semanal: *${fm(c.pagoSemanal)}*`;
       if (moratorio > 0) montoLineas += `\nInterés moratorio: *${fm(moratorio)}*`;
       montoLineas += `\nTotal: *${fm(pendiente)}*`;
       montoLineas += `\nPagos: ${c.pagosRealizados} de ${c.totalPagos}`;
     }
-
   } else if (c.tipo === 'mercancia' && c.pagos) {
     const pend = c.pagos.filter(p => !p.pagado).sort((a,b) => new Date(a.fecha)-new Date(b.fecha));
     const pagosRealizados = c.pagos.filter(p => p.pagado).length;
@@ -2889,33 +2902,21 @@ function generarMsgRecordatorio(c) {
     }
   }
 
-  // Para plazo con desglose múltiple, el estado ya está embebido en montoLineas
-  const ocultarEstado = c.tipo === 'plazo' && c.semanasVencidas && c.semanasVencidas.length > 0;
-
   return `Cliente #${String(c.id).padStart(3,'0')}
 ${c.nombre}
 ${c.direccion}
 
 ${montoLineas}
-${ocultarEstado ? '' : '\n' + estadoMsg}`.trimEnd();
+
+${estadoMsg}`;
 }
 
 function renderRecordatorios() {
   const arr = load();
-  // Actualizar semanas vencidas de todos los clientes plazo antes de filtrar
-  arr.forEach((c, i) => {
-    if (c.tipo === 'plazo') arr[i] = verificarNuevaSemana(c);
-  });
-
-
   const list = document.getElementById('recordList');
 
   const filtrados = arr.filter(c => {
     if (c.monto === 0 && c.liquidado) return false;
-    // Para 'vencido': incluir también plazo con semanas vencidas archivadas
-    if (recordFiltro === 'vencido') {
-      if (c.tipo === 'plazo' && c.semanasVencidas && c.semanasVencidas.length > 0) return true;
-    }
     const fecha = getProximaFecha(c);
     const dias = diasParaFecha(fecha);
     if (dias === null) return false;
@@ -2946,22 +2947,16 @@ function renderRecordatorios() {
   }
 
   list.innerHTML = filtrados.map(c => {
-    // Actualizar semanas vencidas antes de generar mensaje
-    if (c.tipo === 'plazo') c = verificarNuevaSemana(c);
     const msg = generarMsgRecordatorio(c);
     const tel = c.tel ? c.tel.replace(/\D/g,'') : '';
     const waLink = tel ? `https://wa.me/52${tel}?text=${encodeURIComponent(msg)}` : '';
     const fecha = getProximaFecha(c);
-    // Para plazo con semanas vencidas archivadas, forzar dias negativo para mostrar botón WhatsApp
-    const tieneSemanasVencidas = c.tipo === 'plazo' && c.semanasVencidas && c.semanasVencidas.length > 0;
-    const diasRaw = diasParaFecha(fecha);
-    const dias = tieneSemanasVencidas && (diasRaw === null || diasRaw >= 0) ? -1 : diasRaw;
+    const dias = diasParaFecha(fecha);
     const tipoIcon = c.tipo === 'prestamo' ? '💵' : c.tipo === 'plazo' ? '📋' : '📦';
 
     let diasLabel = '';
     let diasColor = 'var(--green)';
-    if (tieneSemanasVencidas) { diasLabel = `${c.semanasVencidas.length + (diasRaw !== null && diasRaw < 0 ? 1 : 0)}sem vencida${c.semanasVencidas.length>0?'s':''}`; diasColor = 'var(--red)'; }
-    else if (dias < 0) { diasLabel = `${Math.abs(dias)}d vencido`; diasColor = 'var(--red)'; }
+    if (dias < 0) { diasLabel = `${Math.abs(dias)}d vencido`; diasColor = 'var(--red)'; }
     else if (dias === 0) { diasLabel = 'Hoy'; diasColor = 'var(--amber)'; }
     else if (dias === 1) { diasLabel = 'Mañana'; diasColor = 'var(--amber)'; }
     else { diasLabel = `En ${dias}d`; diasColor = 'var(--green)'; }
