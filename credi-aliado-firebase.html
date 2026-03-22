@@ -2840,14 +2840,37 @@ function generarMsgRecordatorio(c) {
     }
 
   } else if (c.tipo === 'plazo') {
-    const dc = diasConCargo(c.fechaPago);
-    const moratorio = dc > 0 ? c.pagoSemanal * 0.05 * dc : 0;
-    const totalAbonado = (c.abonosSemanaActual || []).reduce((s,a) => s+a.monto, 0);
-    const pendiente = (c.pagoSemanal - totalAbonado) + moratorio;
-    montoLineas = `Pago semanal: *${fm(c.pagoSemanal)}*`;
-    if (moratorio > 0) montoLineas += `\nInterés moratorio: *${fm(moratorio)}*`;
-    montoLineas += `\nTotal: *${fm(pendiente)}*`;
-    montoLineas += `\nPagos: ${c.pagosRealizados} de ${c.totalPagos}`;
+    const semanas = generarSemanasPlazo(c);
+    const totalGeneral = semanas.reduce((s, w) => s + w.total, 0);
+    if (semanas.length > 1) {
+      // Desglose semana por semana
+      let lineas = '';
+      semanas.forEach((s, idx) => {
+        lineas += `\n--- Semana ${idx + 1} (${fdShort(s.fechaPago)}) ---\n`;
+        lineas += `Pago semanal: *${fm(s.pagoOriginal)}*`;
+        if (s.moratorio > 0) lineas += `\nInterés moratorio (${s.diasV} día${s.diasV!==1?'s':''}): *${fm(s.moratorio)}*`;
+        if (s.abonos && s.abonos.length > 0) {
+          s.abonos.forEach(a => { lineas += `\nAbono (${a.fecha}): *-${fm(a.monto)}*`; });
+        }
+        lineas += `\nTotal: *${fm(s.pendiente + s.moratorio)}*`;
+        if (s.tipo === 'vencida') lineas += `\n🔴 ${s.diasV} día${s.diasV!==1?'s':''} vencido${s.diasV!==1?'s':''}`;
+        else if (s.tipo === 'hoy') lineas += `\n📅 Vence hoy`;
+      });
+      lineas += `\n\n💰 *TOTAL A PONERSE AL CORRIENTE: ${fm(totalGeneral)}*`;
+      lineas += `\nPagos: ${c.pagosRealizados} de ${c.totalPagos}`;
+      montoLineas = lineas.trimStart();
+    } else {
+      // Solo una semana, mostrar normal
+      const s = semanas[0] || {};
+      const dc = diasConCargo(c.fechaPago);
+      const moratorio = dc > 0 ? c.pagoSemanal * 0.05 * dc : 0;
+      const totalAbonado = (c.abonosSemanaActual || []).reduce((a,b) => a+b.monto, 0);
+      const pendiente = (c.pagoSemanal - totalAbonado) + moratorio;
+      montoLineas = `Pago semanal: *${fm(c.pagoSemanal)}*`;
+      if (moratorio > 0) montoLineas += `\nInterés moratorio: *${fm(moratorio)}*`;
+      montoLineas += `\nTotal: *${fm(pendiente)}*`;
+      montoLineas += `\nPagos: ${c.pagosRealizados} de ${c.totalPagos}`;
+    }
 
   } else if (c.tipo === 'mercancia' && c.pagos) {
     const pend = c.pagos.filter(p => !p.pagado).sort((a,b) => new Date(a.fecha)-new Date(b.fecha));
@@ -2863,13 +2886,15 @@ function generarMsgRecordatorio(c) {
     }
   }
 
+  // Para plazo con desglose múltiple, el estado ya está embebido en montoLineas
+  const ocultarEstado = c.tipo === 'plazo' && c.semanasVencidas && c.semanasVencidas.length > 0;
+
   return `Cliente #${String(c.id).padStart(3,'0')}
 ${c.nombre}
 ${c.direccion}
 
 ${montoLineas}
-
-${estadoMsg}`;
+${ocultarEstado ? '' : '\n' + estadoMsg}`.trimEnd();
 }
 
 function renderRecordatorios() {
@@ -2878,6 +2903,10 @@ function renderRecordatorios() {
 
   const filtrados = arr.filter(c => {
     if (c.monto === 0 && c.liquidado) return false;
+    // Para 'vencido': incluir también plazo con semanas vencidas archivadas
+    if (recordFiltro === 'vencido') {
+      if (c.tipo === 'plazo' && c.semanasVencidas && c.semanasVencidas.length > 0) return true;
+    }
     const fecha = getProximaFecha(c);
     const dias = diasParaFecha(fecha);
     if (dias === null) return false;
