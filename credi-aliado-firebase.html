@@ -2840,40 +2840,23 @@ function generarMsgRecordatorio(c) {
     }
 
   } else if (c.tipo === 'plazo') {
-    const moratorioBase = c.pagoSemanal * 0.05;
-    const todasSemanas = [];
-    if (c.semanasVencidas && c.semanasVencidas.length > 0) {
-      c.semanasVencidas.forEach(sv => {
-        const dc = diasConCargo(sv.fechaPago);
-        const moratorio = moratorioBase * dc;
-        todasSemanas.push({ fechaPago: sv.fechaPago, pagoOriginal: sv.pagoOriginal || c.pagoSemanal, pendiente: sv.pendiente, moratorio, diasV: dc, abonos: sv.abonos || [], tipo: 'vencida' });
-      });
-    }
-    if (c.fechaPago) {
-      const dc = diasConCargo(c.fechaPago);
-      const moratorio = moratorioBase * dc;
-      const totalAbonado = (c.abonosSemanaActual || []).reduce((s,a) => s+a.monto, 0);
-      const pendiente = Math.max(0, c.pagoSemanal - totalAbonado);
-      const diasActual = diasVencido(c.fechaPago);
-      const tipo = dc > 0 ? 'vencida' : (diasActual === 0 ? 'hoy' : 'pendiente');
-      todasSemanas.push({ fechaPago: c.fechaPago, pagoOriginal: c.pagoSemanal, pendiente, moratorio, diasV: dc, abonos: c.abonosSemanaActual || [], tipo });
-    }
-    const hayVencidas = todasSemanas.some(s => s.tipo === 'vencida');
-    const totalGeneral = todasSemanas.reduce((s, w) => s + w.pendiente + w.moratorio, 0);
+    const semanas = generarSemanasPlazo(c);
+    const totalGeneral = semanas.reduce((s, w) => s + w.total, 0);
+    const hayVencidas = semanas.some(s => s.tipo === 'vencida');
     if (hayVencidas) {
       let lineas = '';
-      todasSemanas.forEach((s, idx) => {
+      semanas.forEach((s, idx) => {
         if (idx > 0) lineas += '\n';
-        lineas += `📌 Semana ${idx + 1} — vence ${fdShort(s.fechaPago)}\n`;
-        lineas += `Pago semanal: *${fm(s.pagoOriginal)}*`;
-        if (s.moratorio > 0) lineas += `\nInterés moratorio (${s.diasV} día${s.diasV!==1?'s':''}): *${fm(s.moratorio)}*`;
-        if (s.abonos.length > 0) s.abonos.forEach(a => { lineas += `\nAbono (${a.fecha}): *-${fm(a.monto)}*`; });
-        lineas += `\nTotal semana: *${fm(s.pendiente + s.moratorio)}*`;
-        if (s.tipo === 'vencida') lineas += `\n🔴 ${s.diasV} día${s.diasV!==1?'s':''} vencido${s.diasV!==1?'s':''}`;
-        else if (s.tipo === 'hoy') lineas += `\n📅 Vence hoy`;
+        lineas += `Pago semanal: *${fm(s.pagoOriginal)}*\n`;
+        if (s.moratorio > 0) lineas += `Interés moratorio (${s.diasV} día${s.diasV!==1?'s':''}): *${fm(s.moratorio)}*\n`;
+        if (s.abonos && s.abonos.length > 0) s.abonos.forEach(a => { lineas += `Abono (${a.fecha}): *-${fm(a.monto)}*\n`; });
+        lineas += `Total: *${fm(s.pendiente + s.moratorio)}*\n`;
+        if (s.tipo === 'hoy') lineas += `\n📅 Estado: Vence hoy\n`;
+        else if (s.tipo === 'vencida') lineas += `\n🔴 Estado: ${s.diasV} día${s.diasV!==1?'s':''} vencido${s.diasV!==1?'s':''}\n`;
+        else lineas += `\n📅 Estado: Vence el ${fdShort(s.fechaPago)}\n`;
       });
-      lineas += `\n\n💰 *TOTAL A PONERSE AL CORRIENTE: ${fm(totalGeneral)}*`;
-      lineas += `\nPagos: ${c.pagosRealizados} de ${c.totalPagos}`;
+      if (semanas.length > 1) lineas += `\nTotal general: *${fm(totalGeneral)}*\n`;
+      lineas += `Pagos: ${c.pagosRealizados} de ${c.totalPagos}`;
       montoLineas = lineas;
     } else {
       const dc = diasConCargo(c.fechaPago);
