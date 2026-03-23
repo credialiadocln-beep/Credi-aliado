@@ -2123,6 +2123,28 @@ function verificarNuevaSemana(c) {
     if (idx !== -1) { arr[idx] = c; save(arr); }
   }
   return c;
+
+// Simula verificarNuevaSemana SIN guardar — solo para generar mensajes correctos
+function simularSemanasParaMensaje(c) {
+  // Hacer copia profunda para no modificar el original
+  c = JSON.parse(JSON.stringify(c));
+  if (!c.semanasVencidas) c.semanasVencidas = [];
+  if (!c.abonosSemanaActual) c.abonosSemanaActual = [];
+  // Archivar semanas vencidas de 7+ días sin guardar en Firebase
+  let limite = 20; // evitar loop infinito
+  while (c.fechaPago && diasVencido(c.fechaPago) >= 7 && limite-- > 0) {
+    const totalAbonado = c.abonosSemanaActual.reduce((s,a) => s + a.monto, 0);
+    const pendiente = c.pagoSemanal - totalAbonado;
+    c.semanasVencidas.push({
+      fechaPago: c.fechaPago,
+      pagoOriginal: c.pagoSemanal,
+      pendiente: pendiente > 0 ? pendiente : 0,
+      abonos: [...c.abonosSemanaActual]
+    });
+    c.fechaPago = addWeeks(c.fechaPago, 1);
+    c.abonosSemanaActual = [];
+  }
+  return c;
 }
 
 
@@ -2840,7 +2862,8 @@ function generarMsgRecordatorio(c) {
     }
 
   } else if (c.tipo === 'plazo') {
-    const semanas = generarSemanasPlazo(c);
+    const cSim = simularSemanasParaMensaje(c);
+    const semanas = generarSemanasPlazo(cSim);
     const totalGeneral = semanas.reduce((s, w) => s + w.total, 0);
     const hayVencidas = semanas.some(s => s.tipo === 'vencida');
     if (hayVencidas) {
