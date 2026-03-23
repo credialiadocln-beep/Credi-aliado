@@ -2123,28 +2123,6 @@ function verificarNuevaSemana(c) {
     if (idx !== -1) { arr[idx] = c; save(arr); }
   }
   return c;
-
-// Simula verificarNuevaSemana SIN guardar — solo para generar mensajes correctos
-function simularSemanasParaMensaje(c) {
-  // Hacer copia profunda para no modificar el original
-  c = JSON.parse(JSON.stringify(c));
-  if (!c.semanasVencidas) c.semanasVencidas = [];
-  if (!c.abonosSemanaActual) c.abonosSemanaActual = [];
-  // Archivar semanas vencidas de 7+ días sin guardar en Firebase
-  let limite = 20; // evitar loop infinito
-  while (c.fechaPago && diasVencido(c.fechaPago) >= 7 && limite-- > 0) {
-    const totalAbonado = c.abonosSemanaActual.reduce((s,a) => s + a.monto, 0);
-    const pendiente = c.pagoSemanal - totalAbonado;
-    c.semanasVencidas.push({
-      fechaPago: c.fechaPago,
-      pagoOriginal: c.pagoSemanal,
-      pendiente: pendiente > 0 ? pendiente : 0,
-      abonos: [...c.abonosSemanaActual]
-    });
-    c.fechaPago = addWeeks(c.fechaPago, 1);
-    c.abonosSemanaActual = [];
-  }
-  return c;
 }
 
 
@@ -2835,17 +2813,28 @@ function diasParaFecha(fechaStr) {
   return Math.round((f - hoy) / 86400000);
 }
 
+// Simula verificarNuevaSemana SIN guardar — solo para generar mensajes
+function simularSemanasParaMensaje(c) {
+  c = JSON.parse(JSON.stringify(c));
+  if (!c.semanasVencidas) c.semanasVencidas = [];
+  if (!c.abonosSemanaActual) c.abonosSemanaActual = [];
+  let limite = 20;
+  while (c.fechaPago && diasVencido(c.fechaPago) >= 7 && limite-- > 0) {
+    const totalAbonado = c.abonosSemanaActual.reduce((s,a) => s + a.monto, 0);
+    const pendiente = c.pagoSemanal - totalAbonado;
+    c.semanasVencidas.push({
+      fechaPago: c.fechaPago,
+      pagoOriginal: c.pagoSemanal,
+      pendiente: pendiente > 0 ? pendiente : 0,
+      abonos: [...c.abonosSemanaActual]
+    });
+    c.fechaPago = addWeeks(c.fechaPago, 1);
+    c.abonosSemanaActual = [];
+  }
+  return c;
+}
+
 function generarMsgRecordatorio(c) {
-  const fecha = getProximaFecha(c);
-  const dias = diasParaFecha(fecha);
-
-  let estadoMsg = '';
-  if (dias === null) estadoMsg = '';
-  else if (dias < 0) estadoMsg = `🔴 Estado: ${Math.abs(dias)} día${Math.abs(dias)!==1?'s':''} vencido${Math.abs(dias)!==1?'s':''}`;
-  else if (dias === 0) estadoMsg = `📅 *Vence hoy*`;
-  else if (dias === 1) estadoMsg = `⏰ Vence mañana`;
-  else estadoMsg = `📆 Vence el ${fdShort(fecha)}`;
-
   let montoLineas = '';
 
   if (c.tipo === 'prestamo') {
@@ -2853,12 +2842,54 @@ function generarMsgRecordatorio(c) {
     const comision = c.monto * (pct / 100);
     const liquida = c.monto + comision;
     const renueva = comision;
-    const dc = diasConCargo(c.fechaPago);
-    const cargoAcumulado = dc > 0 ? comision * 0.05 * dc : 0;
-    montoLineas = `Monto financiado: *${fm(c.monto)}*\nLiquida: *${fm(liquida)}*\nRenueva: *${fm(renueva)}*`;
-    if (cargoAcumulado > 0) {
-      const totalRenovacionConMoratorio = renueva + cargoAcumulado;
-      montoLineas += `\n\nInterés moratorio (${dc} día${dc!==1?'s':''}): *${fm(cargoAcumulado)}*\nTotal renovación con moratorio: *${fm(totalRenovacionConMoratorio)}*`;
+    // Calcular cuántas semanas han pasado desde fechaPago
+    const diasTotales = diasVencido(c.fechaPago);
+    if (diasTotales >= 7) {
+      // Hay semanas vencidas acumuladas — desglosar
+      const semanasAtras = Math.floor(diasTotales / 7);
+      let lineas = '';
+      let totalGeneral = 0;
+      for (let i = 0; i < semanasAtras; i++) {
+        // fecha de esa semana: fechaPago + (i - semanasAtras) semanas
+        const fechaStr = addWeeks(c.fechaPago, i - semanasAtras);
+        const diasSem = diasVencido(fechaStr);
+        const dc = diasConCargo(fechaStr);
+        const cargo = dc > 0 ? comision * 0.05 * dc : 0;
+        const totalSem = renueva + cargo;
+        totalGeneral += totalSem;
+        if (i > 0) lineas += '\n';
+        lineas += `Semana ${i + 1} — vencida el ${fdShort(fechaStr)}\n`;
+        lineas += `Renueva: *${fm(renueva)}*\n`;
+        if (cargo > 0) lineas += `Interés moratorio (${dc} día${dc!==1?'s':''}): *${fm(cargo)}*\n`;
+        lineas += `Total semana: *${fm(totalSem)}*\n`;
+        lineas += `\n🔴 Estado: ${diasSem} día${diasSem!==1?'s':''} vencido${diasSem!==1?'s':''}\n`;
+      }
+      // Semana actual
+      const dcActual = diasConCargo(c.fechaPago);
+      const cargoActual = dcActual > 0 ? comision * 0.05 * dcActual : 0;
+      const diasActual = diasVencido(c.fechaPago);
+      if (semanasAtras > 0) lineas += '\n';
+      lineas += `Semana ${semanasAtras + 1} — vence ${fdShort(c.fechaPago)}\n`;
+      lineas += `Monto financiado: *${fm(c.monto)}*\n`;
+      lineas += `Liquida: *${fm(liquida)}*\nRenueva: *${fm(renueva)}*\n`;
+      if (cargoActual > 0) lineas += `Interés moratorio (${dcActual} día${dcActual!==1?'s':''}): *${fm(cargoActual)}*\n`;
+      const totalActual = renueva + cargoActual;
+      lineas += `Total semana: *${fm(totalActual)}*\n`;
+      if (diasActual === 0) lineas += `\n📅 Estado: Vence hoy\n`;
+      else if (diasActual > 0) lineas += `\n🔴 Estado: ${diasActual} día${diasActual!==1?'s':''} vencido${diasActual!==1?'s':''}\n`;
+      totalGeneral += totalActual;
+      lineas += `\n💰 *TOTAL A PONERSE AL CORRIENTE: ${fm(totalGeneral)}*`;
+      montoLineas = lineas;
+    } else {
+      // Una sola semana
+      const dc = diasConCargo(c.fechaPago);
+      const cargoAcumulado = dc > 0 ? comision * 0.05 * dc : 0;
+      const dias = diasVencido(c.fechaPago);
+      montoLineas = `Monto financiado: *${fm(c.monto)}*\nLiquida: *${fm(liquida)}*\nRenueva: *${fm(renueva)}*`;
+      if (cargoAcumulado > 0) montoLineas += `\n\nInterés moratorio (${dc} día${dc!==1?'s':''}): *${fm(cargoAcumulado)}*\nTotal renovación con moratorio: *${fm(renueva + cargoAcumulado)}*`;
+      if (dias === 0) montoLineas += `\n\n📅 Estado: Vence hoy`;
+      else if (dias > 0) montoLineas += `\n\n🔴 Estado: ${dias} día${dias!==1?'s':''} vencido${dias!==1?'s':''}`;
+      else montoLineas += `\n\n📅 Estado: Vence el ${fdShort(c.fechaPago)}`;
     }
 
   } else if (c.tipo === 'plazo') {
@@ -2886,22 +2917,48 @@ function generarMsgRecordatorio(c) {
       const moratorio = dc > 0 ? c.pagoSemanal * 0.05 * dc : 0;
       const totalAbonado = (c.abonosSemanaActual || []).reduce((s,a) => s+a.monto, 0);
       const pendiente = (c.pagoSemanal - totalAbonado) + moratorio;
+      const dias = diasVencido(c.fechaPago);
       montoLineas = `Pago semanal: *${fm(c.pagoSemanal)}*`;
       if (moratorio > 0) montoLineas += `\nInterés moratorio: *${fm(moratorio)}*`;
       montoLineas += `\nTotal: *${fm(pendiente)}*`;
       montoLineas += `\nPagos: ${c.pagosRealizados} de ${c.totalPagos}`;
+      if (dias === 0) montoLineas += `\n\n📅 Estado: Vence hoy`;
+      else if (dias > 0) montoLineas += `\n\n🔴 Estado: ${dias} día${dias!==1?'s':''} vencido${dias!==1?'s':''}`;
+      else montoLineas += `\n\n📅 Estado: Vence el ${fdShort(c.fechaPago)}`;
     }
+
   } else if (c.tipo === 'mercancia' && c.pagos) {
     const pend = c.pagos.filter(p => !p.pagado).sort((a,b) => new Date(a.fecha)-new Date(b.fecha));
     const pagosRealizados = c.pagos.filter(p => p.pagado).length;
     const totalPagos = c.pagos.length;
     if (pend.length) {
-      const dc = diasConCargo(pend[0].fecha);
-      const cargo = c.monto * 0.05 * dc;
-      const total = pend[0].monto + cargo;
-      montoLineas = `📦 Mercancía: *${fm(c.monto)}*\nTotal a pagar: *${fm(total)}*`;
-      if (cargo > 0) montoLineas += `\n  ↳ Interés moratorio (${dc} día${dc!==1?'s':''}): *${fm(cargo)}*`;
-      montoLineas += `\nSemanas pagadas: *${pagosRealizados} de ${totalPagos}*`;
+      const vencidas = pend.filter(p => diasConCargo(p.fecha) > 0);
+      if (vencidas.length > 1) {
+        let lineas = '';
+        let totalGeneral = 0;
+        vencidas.forEach((p, idx) => {
+          const dc = diasConCargo(p.fecha);
+          const cargo = c.monto * 0.05 * dc;
+          const total = p.monto + cargo;
+          totalGeneral += total;
+          if (idx > 0) lineas += '\n';
+          lineas += `Semana ${idx + 1} — vence ${fdShort(p.fecha)}\n`;
+          lineas += `Pago: *${fm(p.monto)}*\n`;
+          if (cargo > 0) lineas += `Interés moratorio (${dc} día${dc!==1?'s':''}): *${fm(cargo)}*\n`;
+          lineas += `Total semana: *${fm(total)}*\n`;
+          lineas += `\n🔴 Estado: ${dc} día${dc!==1?'s':''} vencido${dc!==1?'s':''}\n`;
+        });
+        lineas += `\n💰 *TOTAL A PONERSE AL CORRIENTE: ${fm(totalGeneral)}*`;
+        lineas += `\nSemanas pagadas: *${pagosRealizados} de ${totalPagos}*`;
+        montoLineas = lineas;
+      } else {
+        const dc = diasConCargo(pend[0].fecha);
+        const cargo = c.monto * 0.05 * dc;
+        const total = pend[0].monto + cargo;
+        montoLineas = `📦 Mercancía: *${fm(c.monto)}*\nTotal a pagar: *${fm(total)}*`;
+        if (cargo > 0) montoLineas += `\n  ↳ Interés moratorio (${dc} día${dc!==1?'s':''}): *${fm(cargo)}*`;
+        montoLineas += `\nSemanas pagadas: *${pagosRealizados} de ${totalPagos}*`;
+      }
     }
   }
 
@@ -2909,9 +2966,7 @@ function generarMsgRecordatorio(c) {
 ${c.nombre}
 ${c.direccion}
 
-${montoLineas}
-
-${estadoMsg}`;
+${montoLineas}`;
 }
 
 function renderRecordatorios() {
